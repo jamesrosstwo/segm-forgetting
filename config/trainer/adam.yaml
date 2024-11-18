@@ -1,0 +1,5 @@
+_target_: trainer.SegmentationTrainer
+loss: torch.nn.CrossEntropyLoss
+optimizer:
+  _target_: torch.optim.Adam
+  lr: 0.0001

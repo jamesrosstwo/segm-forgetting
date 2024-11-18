@@ -1,0 +1,14 @@
+defaults:
+  - dataset: pascal_voc
+  - model: unet
+  - trainer: adam
+
+wandb_name: "segm-forgetting"
+experiment_name: "none"
+
+debug: true
+
+hydra:
+  output_subdir: null # Disable saving of config files. We'll do that ourselves.
+  run:
+    dir: . # Set working dir to current directory

@@ -1,0 +1,3 @@
+_target_: continuum.datasets.PascalVOC2012
+train: true
+download: true
