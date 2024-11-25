@@ -1,3 +1,4 @@
 _target_: segmentation_models_pytorch.Unet
 encoder_name: "resnet34"
 encoder_weights: "imagenet"
+classes: 256
