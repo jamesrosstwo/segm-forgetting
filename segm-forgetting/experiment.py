@@ -5,6 +5,7 @@ from typing import Tuple
 from continuum import SegmentationClassIncremental
 from continuum.transforms.segmentation import Resize, ToTensor
 
+import torch
 import wandb
 from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
@@ -12,7 +13,9 @@ from torch.utils.data import DataLoader
 
 from file import EXPERIMENTS_PATH, check_create_dir, DATA_PATH
 from trainer import SegmentationTrainer
+from evaluator import SegmentationEvaluator
 
+import pandas as pd
 
 def get_date_string() -> str:
     return datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
@@ -24,24 +27,30 @@ class Experiment:
             experiment_name: str,
             wandb_name: str,
             dataset: DictConfig,
+            dataset_val: DictConfig,
             model: DictConfig,
             trainer: DictConfig,
+            evaluator: DictConfig,
             should_cache_results: bool = True,
             debug: bool = False
     ):
         self._experiment_name = experiment_name
         self._wandb_project_name = wandb_name
         self._data_conf = dataset
+        self._data_val_conf = dataset_val
         self._trainer_conf = trainer
         self._exp_instance_name = f"{self.name}_{get_date_string()}"
         self._should_cache_results = should_cache_results
         self._model_conf = model
+        self._evaluator_conf = evaluator
         self._out_path, self._out_cache_dir = self._make_output_dirs()
         self._debug_mode = debug
 
         self._init_wandb()
         self._dataset = self._construct_dataset(self._data_conf)
+        self._dataset_val = self._construct_dataset(self._data_val_conf)
         self._segm_model = self._construct_model(self._model_conf)
+        self._evaluator = self._construct_evaluator(self._evaluator_conf)
         self._trainer: SegmentationTrainer = self._construct_trainer(self._trainer_conf)
 
     def _make_output_dirs(self):
@@ -61,6 +70,9 @@ class Experiment:
     def _construct_dataset(self, data_conf: DictConfig):
         return instantiate(data_conf, data_path=str(DATA_PATH / data_conf._target_))
 
+    def _construct_evaluator(self, evaluator_conf: DictConfig) -> SegmentationEvaluator:
+        return instantiate(evaluator_conf, _recursive_=False, model=self._segm_model)
+    
     def _construct_model(self, model_conf: DictConfig):
         return instantiate(model_conf)
 
@@ -111,6 +123,48 @@ class Experiment:
         )
 
         for task_id, taskset in enumerate(scenario):
-            loader = DataLoader(taskset)
+            
+            # Load data for this task
+            loader = DataLoader(taskset, batch_size=2, shuffle=False)
+            
+            # Train the model on this task
             self._trainer.train_model_on_task(loader)
-            # TODO: run metrics
+
+            # Save the model
+            torch.save(self._trainer._model.state_dict(), f"{self._out_path}/model_task_{task_id}.pth")
+
+            # Evaluate the model on the validation set
+            self.evaluate(task_id)
+    
+    def evaluate(self, train_task_id: int):
+        scenario = SegmentationClassIncremental(
+            self._dataset_val,
+            nb_classes=20,
+            initial_increment=20, increment=1,
+            mode="overlap",
+            transformations=[Resize((512, 512)), ToTensor()]
+        )
+
+        metrics = []
+        
+        for eval_task_id, eval_taskset in enumerate(scenario):
+            # Don't need to do eval for tasks that we haven't trained on yet
+            if eval_task_id > train_task_id:
+                continue
+
+            self._segm_model.eval()
+            acc, miou_mean, miou_class, dice_mean, dice_class = self._evaluator.evaluate(DataLoader(eval_taskset, batch_size=2, shuffle=False))
+
+            metrics.append({
+                "train_task_id": train_task_id,
+                "eval_task_id": eval_task_id,
+                "accuracy": acc,
+                "miou_mean": miou_mean,
+                "miou_class": miou_class,
+                "dice_mean": dice_mean,
+                "dice_class": dice_class
+            })
+
+            df = pd.DataFrame(metrics)
+            df.to_csv(f"{self._out_path}/metrics.csv", index=False)
+        
