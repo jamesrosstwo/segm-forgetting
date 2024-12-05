@@ -7,6 +7,7 @@ from torch.utils.data import DataLoader
 import tqdm
 import torch
 from torchmetrics.segmentation import MeanIoU, GeneralizedDiceScore
+import matplotlib.pyplot as plt
 
 class SegmentationEvaluator:
     def __init__(self, model: nn.Module):
@@ -22,30 +23,29 @@ class SegmentationEvaluator:
         progress = tqdm.tqdm(loader, desc="Evaluating", leave=True)
 
         num_batches = 0
-        miou_class = MeanIoU(num_classes=256, per_class=True, input_format="index").to(self.device)
-        miou_mean = MeanIoU(num_classes=256, per_class=False, input_format="index").to(self.device)
-        dice_class = GeneralizedDiceScore(num_classes=256, per_class=True, input_format="index").to(self.device)
-        dice_mean = GeneralizedDiceScore(num_classes=256, per_class=False, input_format="index").to(self.device)
+        miou_class = MeanIoU(num_classes=256, per_class=True, input_format="one-hot").to(self.device)
+        miou_mean = MeanIoU(num_classes=256, per_class=False, input_format="one-hot").to(self.device)
+        dice_class = GeneralizedDiceScore(num_classes=256, per_class=True, input_format="one-hot").to(self.device)
+        dice_mean = GeneralizedDiceScore(num_classes=256, per_class=False, input_format="one-hot").to(self.device)
         acc = 0
         for data, label, task_idx in progress:
             num_batches += 1
-            try:
-                data = data.to(self.device)
-                label = label.to(self.device)
-                predicted_mask = self._model(data)
+            data = data.to(self.device)
+            label = label.to(self.device)
+            predicted_mask = self._model(data)
+            preds_max = torch.argmax(predicted_mask, dim=1)
+            preds_onehot = torch.nn.functional.one_hot(preds_max, num_classes=256).permute(0, 3, 1, 2)
 
-                # Crossentropy expects long labels
-                label = label.long()
-                
-                preds_max = torch.argmax(predicted_mask, dim=1)
-                
-                acc += (preds_max == label).float().mean()
-                miou_class.update(preds_max, label)
-                miou_mean.update(preds_max, label)
-                dice_class.update(preds_max, label)
-                dice_mean.update(preds_max, label)
-                
-            except OSError as e:
-                pass
+            # Crossentropy expects long labels
+            label = label.long()
+            label_onehot = torch.nn.functional.one_hot(label, num_classes=256).permute(0, 3, 1, 2)
+            unique_values = torch.unique(preds_max)
+            # print(f"Unique values in preds_max: {unique_values}")
+            # print(f"Unique values in label: {torch.unique(label)}")
+            acc += (preds_max == label).float().mean()
+            miou_class.update(preds_onehot, label_onehot)
+            miou_mean.update(preds_onehot, label_onehot)
+            dice_class.update(preds_onehot, label_onehot)
+            dice_mean.update(preds_onehot, label_onehot)
 
         return acc / num_batches, miou_mean.compute(), miou_class.compute(), dice_mean.compute(), dice_class.compute()

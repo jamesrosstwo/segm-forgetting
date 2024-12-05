@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Tuple
 
 from continuum import SegmentationClassIncremental
-from continuum.transforms.segmentation import Resize, ToTensor
+from continuum.transforms.segmentation import Resize, ToTensor, Normalize
 
 import torch
 import wandb
@@ -16,6 +16,7 @@ from trainer import SegmentationTrainer
 from evaluator import SegmentationEvaluator
 
 import pandas as pd
+import os
 
 def get_date_string() -> str:
     return datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
@@ -39,9 +40,9 @@ class Experiment:
         self._data_conf = dataset
         self._data_val_conf = dataset_val
         self._trainer_conf = trainer
-        self._exp_instance_name = f"{self.name}_{get_date_string()}"
-        self._should_cache_results = should_cache_results
         self._model_conf = model
+        self._exp_instance_name = f"{self.name}_{self._model_conf.encoder_name}_{get_date_string()}"
+        self._should_cache_results = should_cache_results
         self._evaluator_conf = evaluator
         self._out_path, self._out_cache_dir = self._make_output_dirs()
         self._debug_mode = debug
@@ -52,6 +53,7 @@ class Experiment:
         self._segm_model = self._construct_model(self._model_conf)
         self._evaluator = self._construct_evaluator(self._evaluator_conf)
         self._trainer: SegmentationTrainer = self._construct_trainer(self._trainer_conf)
+        self._freeze_encoder_weights()
 
     def _make_output_dirs(self):
         out_path = EXPERIMENTS_PATH / self._exp_instance_name
@@ -63,6 +65,12 @@ class Experiment:
         base_cache_dir = check_create_dir(str(EXPERIMENTS_PATH / "cache"))
         out_cache_dir = check_create_dir(str(base_cache_dir / self.name))
         return out_dir, out_cache_dir
+
+    def _freeze_encoder_weights(self):
+        for layer in self._segm_model.encoder.children():
+            for param in layer.parameters():
+                param.requires_grad = False
+        return
 
     def _construct_trainer(self, trainer_conf: DictConfig) -> SegmentationTrainer:
         return instantiate(self._trainer_conf, _recursive_=False, model=self._segm_model)
@@ -102,7 +110,7 @@ class Experiment:
             id=run_id,
             dir=self._out_path,
             project=self._wandb_project_name,
-            name=self._exp_instance_name,
+            name=f"{self._exp_instance_name}_{self._model_conf.encoder_name}",
             config={
                 "dataset": OmegaConf.to_container(self._data_conf),
                 "model": OmegaConf.to_container(self._model_conf)
@@ -119,52 +127,65 @@ class Experiment:
             nb_classes=20,
             initial_increment=15, increment=1,
             mode="overlap",
-            transformations=[Resize((512, 512)), ToTensor()]
+            transformations=[
+                Resize((512, 512)),
+                ToTensor(),
+                Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]), 
+            ]
         )
-
+        saved_models = []
         for task_id, taskset in enumerate(scenario):
-            
+            print("here1")
             # Load data for this task
-            loader = DataLoader(taskset, batch_size=2, shuffle=False)
+            loader = DataLoader(taskset, batch_size=4, shuffle=False)
             
             # Train the model on this task
             self._trainer.train_model_on_task(loader)
 
             # Save the model
-            torch.save(self._trainer._model.state_dict(), f"{self._out_path}/model_task_{task_id}.pth")
+            save_path = f"{self._out_path}/model_task_{task_id}.pth"
+            saved_models.append(save_path)
+            torch.save(self._segm_model.state_dict(), save_path)
 
-            # Evaluate the model on the validation set
-            self.evaluate(task_id)
+        # Evaluate the model on the validation set
+        self.evaluate(saved_models)
     
-    def evaluate(self, train_task_id: int):
-        scenario = SegmentationClassIncremental(
-            self._dataset_val,
-            nb_classes=20,
-            initial_increment=20, increment=1,
-            mode="overlap",
-            transformations=[Resize((512, 512)), ToTensor()]
-        )
-
+    def evaluate(self, saved_model_paths):
         metrics = []
-        
-        for eval_task_id, eval_taskset in enumerate(scenario):
-            # Don't need to do eval for tasks that we haven't trained on yet
-            if eval_task_id > train_task_id:
-                continue
+        for model_path in saved_model_paths:
+            print(model_path)
+            self._segm_model.load_state_dict(torch.load(model_path))
+            train_task_id = int(model_path.split("_")[-1].split(".")[0])
 
-            self._segm_model.eval()
-            acc, miou_mean, miou_class, dice_mean, dice_class = self._evaluator.evaluate(DataLoader(eval_taskset, batch_size=2, shuffle=False))
+            scenario = SegmentationClassIncremental(
+                self._dataset_val,
+                nb_classes=20,
+                initial_increment=15, increment=1,
+                mode="overlap",
+                transformations=[Resize((512, 512)), ToTensor(), Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),]
+            )
 
-            metrics.append({
-                "train_task_id": train_task_id,
-                "eval_task_id": eval_task_id,
-                "accuracy": acc,
-                "miou_mean": miou_mean,
-                "miou_class": miou_class,
-                "dice_mean": dice_mean,
-                "dice_class": dice_class
-            })
+           
+            for eval_task_id, eval_taskset in enumerate(scenario):
+                # Don't need to do eval for tasks that we haven't trained on yet
+                if eval_task_id > train_task_id:
+                    continue
+                
+                
+                self._segm_model.eval()
+                acc, miou_mean, miou_class, dice_mean, dice_class = self._evaluator.evaluate(DataLoader(eval_taskset, batch_size=4, shuffle=False))
 
-            df = pd.DataFrame(metrics)
-            df.to_csv(f"{self._out_path}/metrics.csv", index=False)
-        
+                metrics.append({
+                    "train_task_id": train_task_id,
+                    "eval_task_id": eval_task_id,
+                    "accuracy": [acc],
+                    "miou_mean": [miou_mean],
+                    "miou_class": [miou_class],
+                    "dice_mean": [dice_mean],
+                    "dice_class": [dice_class]
+                })
+                print(metrics)
+                print(eval_task_id)
+                df = pd.DataFrame(metrics)
+                df.to_csv(f"{self._out_path}/metrics.csv", index=False)
+            
