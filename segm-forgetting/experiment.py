@@ -28,7 +28,6 @@ class Experiment:
             experiment_name: str,
             wandb_name: str,
             dataset: DictConfig,
-            dataset_val: DictConfig,
             model: DictConfig,
             trainer: DictConfig,
             should_cache_results: bool = True,
@@ -37,7 +36,6 @@ class Experiment:
         self._experiment_name = experiment_name
         self._wandb_project_name = wandb_name
         self._data_conf = dataset
-        self._data_val_conf = dataset_val
         self._model_conf = model
         self._exp_instance_name = f"{self.name}_{self._model_conf.encoder_name}_{get_date_string()}"
         self._should_cache_results = should_cache_results
@@ -91,7 +89,7 @@ class Experiment:
         print("Creating new wandb run id: {}".format(run_id))
         wandb.init(
             id=run_id,
-            dir=self._out_path,
+            dir=str(self._out_path),
             project=self._wandb_project_name,
             name=f"{self._exp_instance_name}",
             config={
