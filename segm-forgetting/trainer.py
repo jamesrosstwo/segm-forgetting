@@ -1,4 +1,5 @@
 import importlib
+from typing import List, Set
 
 from hydra.utils import instantiate
 from omegaconf import DictConfig
@@ -12,25 +13,30 @@ class SegmentationTrainer:
     def __init__(self, model: nn.Module, loss: str, optimizer: DictConfig):
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self._model = model.to(self.device)
-        self._loss_function = nn.CrossEntropyLoss(ignore_index=255, weight=torch.tensor([0.05 if x == 0 else 1.0 for x in range(256)]).to(self.device))
+        self._loss_function = nn.CrossEntropyLoss(ignore_index=255).to(self.device)
         self._optimizer = instantiate(optimizer, params=model.parameters())
 
-    def train_model_on_task(self, loader: DataLoader):
+    def train_model_on_task(self, loader: DataLoader, task_classes: List[int]):
         self._model.train()
         for epoch in range(4):
             progress = tqdm.tqdm(loader, desc="Training", leave=True)
             total_loss = 0
             num_batches = 0
+
+            # Mask out class predictions for classes not in this task by setting output logits to -inf
+            class_mask = torch.full((256,), -1e10, device=self.device)
+            class_mask[task_classes] = 0
+
             for data, label, task_idx in progress:
                 num_batches += 1
 
                 data = data.to(self.device)
                 label = label.to(self.device)
                 predicted_mask = self._model(data)
-
+                masked_logits = predicted_mask + class_mask.view(1, -1, 1, 1)
                 # Crossentropy expects long labels
                 label = label.long()
-                loss = self._loss_function(predicted_mask, label)
+                loss = self._loss_function(masked_logits, label)
                 loss.backward()
                 self._optimizer.step()
 

@@ -100,7 +100,7 @@ class ExperimentEvaluator:
         for checkpoint_path, model_idx in zip(self.checkpoint_paths, range(self._n_tasks)):
             segm_model = construct_model(self._model_cfg)
             segm_model.load_state_dict(torch.load(checkpoint_path))
-            scenario = construct_scenario(self._dataset)
+            scenario, task_classes = construct_scenario(self._dataset)
             evaluator = SegmentationEvaluator(segm_model)
             metrics_out_path = self._metrics_path_from_idx(model_idx)
             for eval_task_idx, metrics_df in enumerate(evaluator.evaluate_scenario(scenario)):

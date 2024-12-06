@@ -103,13 +103,14 @@ class Experiment:
         return self._experiment_name
 
     def run(self):
-        scenario = construct_scenario(self._dataset)
+        scenario, tasks_classes = construct_scenario(self._dataset)
         saved_models = []
         for task_id, taskset in enumerate(scenario):
+            task_classes = tasks_classes[task_id]
             # Load data for this task
             loader = DataLoader(taskset, batch_size=4, shuffle=False)
             # Train the model on this task
-            self._trainer.train_model_on_task(loader)
+            self._trainer.train_model_on_task(loader, task_classes)
             # Save the model
             save_path = task_id_to_checkpoint_path(self._out_path, task_id)
             saved_models.append(save_path)
