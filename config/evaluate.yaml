@@ -1,0 +1,19 @@
+defaults:
+  - dataset: pascal_voc
+  - model: unet
+  - trainer: adam
+  - evaluator: evaluator
+  - dataset_val: pascal_voc_val
+
+wandb_name: "segm-forgetting"
+experiment_name: "none"
+
+debug: true
+
+hydra:
+  sweeper:
+    params:
+      model: unet_resnet18
+  output_subdir: null # Disable saving of config files. We'll do that ourselves.
+  run:
+    dir: . # Set working dir to current directory

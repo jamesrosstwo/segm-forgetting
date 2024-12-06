@@ -3,6 +3,7 @@ from omegaconf import DictConfig
 
 from experiment import Experiment
 
+
 @hydra.main(version_base=None, config_path="../config", config_name="config")
 def run_experiment(cfg: DictConfig):
     if isinstance(cfg, list):

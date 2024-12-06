@@ -17,7 +17,6 @@ class SegmentationTrainer:
 
     def train_model_on_task(self, loader: DataLoader):
         self._model.train()
-        
         for epoch in range(4):
             progress = tqdm.tqdm(loader, desc="Training", leave=True)
             total_loss = 0
