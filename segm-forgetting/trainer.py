@@ -28,7 +28,7 @@ class SegmentationTrainer:
         n_epochs = math.ceil(n_novel_classes / self._n_base_classes) * self._n_base_epochs
         self._model.train()
         for epoch in range(n_epochs):
-            progress = tqdm.tqdm(loader, desc=f"Training epoch {epoch}/{n_epochs}", leave=True)
+            progress = tqdm.tqdm(loader, desc=f"Training epoch {epoch}/{n_epochs} on {self.device}", leave=True)
             total_loss = 0
             num_batches = 0
             # Mask out class predictions for classes not in this task by setting output logits to -inf
