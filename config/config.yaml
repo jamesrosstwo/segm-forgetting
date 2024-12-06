@@ -2,8 +2,6 @@ defaults:
   - dataset: pascal_voc
   - model: unet
   - trainer: adam
-  - evaluator: evaluator
-  - dataset_val: pascal_voc_val
 
 wandb_name: "segm-forgetting"
 experiment_name: "none"
