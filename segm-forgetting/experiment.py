@@ -13,7 +13,7 @@ from torch.utils.data import DataLoader
 
 from file import EXPERIMENTS_PATH, check_create_dir, DATA_PATH
 from trainer import SegmentationTrainer
-from evaluator import SegmentationEvaluator
+from evaluator import SegmentationEvaluator, ExperimentEvaluator
 
 import pandas as pd
 import os
@@ -104,7 +104,7 @@ class Experiment:
 
     def run(self):
         scenario, tasks_classes = construct_scenario(self._dataset)
-        saved_models = []
+        checkpoint_paths = []
         for task_id, taskset in enumerate(scenario):
             task_classes = tasks_classes[task_id]
             # Load data for this task
@@ -114,47 +114,10 @@ class Experiment:
             self._trainer.train_model_on_task(loader, task_classes)
             # Save the model
             save_path = task_id_to_checkpoint_path(self._out_path, task_id)
-            saved_models.append(save_path)
+            checkpoint_paths.append(save_path)
             torch.save(self._segm_model.state_dict(), save_path)
 
         # Evaluate the model on the validation set
-        self.evaluate(saved_models)
-    
-    def evaluate(self, saved_model_paths):
-        metrics = []
-        for model_path in saved_model_paths:
-            print(model_path)
-            self._segm_model.load_state_dict(torch.load(model_path))
-            train_task_id = int(model_path.split("_")[-1].split(".")[0])
-
-            scenario = SegmentationClassIncremental(
-                self._dataset_val,
-                nb_classes=20,
-                initial_increment=15, increment=1,
-                mode="overlap",
-                transformations=[Resize((512, 512)), ToTensor(), Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),]
-            )
-
-           
-            for eval_task_id, eval_taskset in enumerate(scenario):
-                # Don't need to do eval for tasks that we haven't trained on yet
-                if eval_task_id > train_task_id:
-                    continue
-                
-                self._segm_model.eval()
-                acc, miou_mean, miou_class, dice_mean, dice_class = self._evaluator.evaluate(DataLoader(eval_taskset, batch_size=2, shuffle=False))
-
-                metrics.append({
-                    "train_task_id": train_task_id,
-                    "eval_task_id": eval_task_id,
-                    "accuracy": [acc],
-                    "miou_mean": [miou_mean],
-                    "miou_class": [miou_class],
-                    "dice_mean": [dice_mean],
-                    "dice_class": [dice_class]
-                })
-                print(metrics)
-                print(eval_task_id)
-                df = pd.DataFrame(metrics)
-                df.to_csv(f"{self._out_path}/metrics.csv", index=False)
-            
+        eval = ExperimentEvaluator(self._data_conf, self._model_conf, str(self._out_path))
+        eval.evaluate_tasks()
+        eval.analyze()

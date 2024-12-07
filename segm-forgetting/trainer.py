@@ -27,7 +27,7 @@ class SegmentationTrainer:
         self._seen_classes = set(task_classes).union(self._seen_classes)
         if self._n_base_classes is None:
             self._n_base_classes = n_novel_classes
-        n_epochs = math.ceil(n_novel_classes / self._n_base_classes) * self._n_base_epochs
+        n_epochs = math.ceil(n_novel_classes / self._n_base_classes * self._n_base_epochs)
         self._model.train()
         miou_class = MeanIoU(num_classes=21, per_class=True, input_format="index").to(self.device)
         wandb.log({"test": 1})

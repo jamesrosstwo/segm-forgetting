@@ -10,6 +10,7 @@ from torch.utils.data import DataLoader
 import tqdm
 import torch
 from torchmetrics.segmentation import MeanIoU, GeneralizedDiceScore
+from tqdm import tqdm
 
 from file import ROOT_PATH
 from util import construct_dataset, construct_scenario, task_id_to_checkpoint_path, construct_model
@@ -26,7 +27,7 @@ class SegmentationEvaluator:
 
     def _evaluate_single(self, loader: DataLoader):
         self._model.eval()
-        progress = tqdm.tqdm(loader, desc="Evaluating", leave=True)
+        progress = tqdm(loader, desc="Evaluating", leave=True)
 
         num_batches = 0
         miou_class = MeanIoU(num_classes=21, per_class=True, input_format="one-hot").to(self.device)
@@ -34,6 +35,7 @@ class SegmentationEvaluator:
         dice_class = GeneralizedDiceScore(num_classes=21, per_class=True, input_format="one-hot").to(self.device)
         dice_mean = GeneralizedDiceScore(num_classes=21, per_class=False, input_format="one-hot").to(self.device)
         acc = 0
+
         for data, label, task_idx in progress:
             num_batches += 1
             data = data.to(self.device)
@@ -42,7 +44,6 @@ class SegmentationEvaluator:
             preds_max = torch.argmax(predicted_mask, dim=1)
             preds_onehot = torch.nn.functional.one_hot(preds_max, num_classes=21).permute(0, 3, 1, 2)
 
-            # Crossentropy expects long labels
             label = label.long()
             label[label == 255] = 0
             label_onehot = torch.nn.functional.one_hot(label, num_classes=21).permute(0, 3, 1, 2)
@@ -50,30 +51,41 @@ class SegmentationEvaluator:
             # print(f"Unique values in preds_max: {unique_values}")
             # print(f"Unique values in label: {torch.unique(label)}")
             acc += (preds_max == label).float().mean()
+
             miou_class.update(preds_onehot, label_onehot)
             miou_mean.update(preds_onehot, label_onehot)
             dice_class.update(preds_onehot, label_onehot)
             dice_mean.update(preds_onehot, label_onehot)
 
-        return acc / num_batches, miou_mean.compute(), miou_class.compute(), dice_mean.compute(), dice_class.compute()
+        acc = acc.item() / num_batches
+        miou_mean = miou_mean.compute().item()
+        miou_class = miou_class.compute().tolist()
+        dice_mean = dice_mean.compute().item()
+        dice_class = dice_class.compute().tolist()
+
+        return acc, miou_mean, miou_class, dice_mean, dice_class
+
 
     def evaluate_scenario(self, scenario) -> Generator[pd.DataFrame, None, None]:
-        task_metrics = dict()
-        for eval_task_id, eval_taskset in tqdm(enumerate(scenario), "Evaluating across all tasks"):
+        for eval_task_id, eval_taskset in enumerate(tqdm(scenario, desc="Evaluating across all tasks")):
             self._model.eval()
-
             acc, miou_mean, miou_class, dice_mean, dice_class = self._evaluate_single(
                 DataLoader(eval_taskset, batch_size=4, shuffle=False)
             )
 
-            task_metrics[eval_task_id] = {
-                "accuracy": [acc],
-                "miou_mean": [miou_mean],
-                "miou_class": [miou_class],
-                "dice_mean": [dice_mean],
-                "dice_class": [dice_class]
+            task_metrics = {
+                "task_id": eval_task_id,
+                "accuracy": acc,
+                "miou_mean": miou_mean,
+                "dice_mean": dice_mean,
             }
-            yield pd.DataFrame(task_metrics)
+
+            for i, val in enumerate(miou_class):
+                task_metrics[f"miou_class_{i}"] = val
+            for i, val in enumerate(dice_class):
+                task_metrics[f"dice_class_{i}"] = val
+
+            yield pd.DataFrame([task_metrics])
 
 
 class ExperimentEvaluator:
@@ -95,7 +107,7 @@ class ExperimentEvaluator:
         return [task_id_to_checkpoint_path(self._checkpoints_path, i) for i in range(self._n_tasks)]
 
     def _metrics_path_from_idx(self, idx):
-        return self._eval_path / "metrics_model_{idx}.csv"
+        return self._eval_path / f"metrics_model_{idx}.csv"
 
     def evaluate_tasks(self):
         for checkpoint_path, model_idx in zip(self.checkpoint_paths, range(self._n_tasks)):
@@ -104,8 +116,12 @@ class ExperimentEvaluator:
             scenario, task_classes = construct_scenario(self._dataset)
             evaluator = SegmentationEvaluator(segm_model)
             metrics_out_path = self._metrics_path_from_idx(model_idx)
+
+            all_metrics = []
             for eval_task_idx, metrics_df in enumerate(evaluator.evaluate_scenario(scenario)):
-                metrics_df.to_csv(str(metrics_out_path), index=False)
+                all_metrics.append(metrics_df)
+            combined_metrics = pd.concat(all_metrics, ignore_index=True)
+            combined_metrics.to_csv(metrics_out_path, index=False)
 
     def cl_metrics(self, metrics_df):
         task_ids = metrics_df['task_id'].unique()
