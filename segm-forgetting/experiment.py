@@ -13,7 +13,7 @@ from torch.utils.data import DataLoader
 
 from file import EXPERIMENTS_PATH, check_create_dir, DATA_PATH
 from trainer import SegmentationTrainer
-from evaluator import SegmentationEvaluator
+from evaluator import SegmentationEvaluator, ExperimentEvaluator
 
 import pandas as pd
 import os
@@ -104,14 +104,22 @@ class Experiment:
 
     def run(self):
         scenario, tasks_classes = construct_scenario(self._dataset)
-        saved_models = []
+        checkpoint_paths = []
         for task_id, taskset in enumerate(scenario):
             task_classes = tasks_classes[task_id]
             # Load data for this task
-            loader = DataLoader(taskset, batch_size=4, shuffle=False)
+            loader = DataLoader(taskset, batch_size=2, shuffle=False)
+            
             # Train the model on this task
             self._trainer.train_model_on_task(loader, task_classes)
             # Save the model
             save_path = task_id_to_checkpoint_path(self._out_path, task_id)
-            saved_models.append(save_path)
+            checkpoint_paths.append(save_path)
             torch.save(self._segm_model.state_dict(), save_path)
+
+        # Evaluate the model on the validation set
+        self.evaluate(checkpoint_paths)
+
+        eval = ExperimentEvaluator(**cfg)
+        eval.evaluate_tasks()
+        eval.analyze()
