@@ -25,7 +25,7 @@ class SegmentationTrainer:
         self._seen_classes = set(task_classes).union(self._seen_classes)
         if self._n_base_classes is None:
             self._n_base_classes = n_novel_classes
-        n_epochs = math.ceil(n_novel_classes / self._n_base_classes) * self._n_base_epochs
+        n_epochs = math.ceil(n_novel_classes / self._n_base_classes * self._n_base_epochs)
         self._model.train()
         for epoch in range(n_epochs):
             progress = tqdm.tqdm(loader, desc=f"Training epoch {epoch}/{n_epochs} on {self.device}", leave=True)

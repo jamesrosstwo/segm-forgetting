@@ -7,9 +7,9 @@ import pandas as pd
 from omegaconf import DictConfig
 from torch import nn
 from torch.utils.data import DataLoader
-import tqdm
 import torch
 from torchmetrics.segmentation import MeanIoU, GeneralizedDiceScore
+from tqdm import tqdm
 
 from file import ROOT_PATH
 from util import construct_dataset, construct_scenario, task_id_to_checkpoint_path, construct_model
@@ -26,7 +26,7 @@ class SegmentationEvaluator:
 
     def _evaluate_single(self, loader: DataLoader):
         self._model.eval()
-        progress = tqdm.tqdm(loader, desc="Evaluating", leave=True)
+        progress = tqdm(loader, desc="Evaluating", leave=True)
 
         num_batches = 0
         miou_class = MeanIoU(num_classes=256, per_class=True, input_format="one-hot").to(self.device)
@@ -58,7 +58,7 @@ class SegmentationEvaluator:
 
     def evaluate_scenario(self, scenario) -> Generator[pd.DataFrame, None, None]:
         task_metrics = dict()
-        for eval_task_id, eval_taskset in tqdm(enumerate(scenario), "Evaluating across all tasks"):
+        for eval_task_id, eval_taskset in enumerate(tqdm(scenario, desc="Evaluating across all tasks")):
             self._model.eval()
 
             acc, miou_mean, miou_class, dice_mean, dice_class = self._evaluate_single(

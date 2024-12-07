@@ -1,14 +1,8 @@
 defaults:
   - dataset: pascal_voc
   - model: unet
-  - trainer: adam
-  - evaluator: evaluator
-  - dataset_val: pascal_voc_val
 
-wandb_name: "segm-forgetting"
-experiment_name: "none"
-
-debug: true
+checkpoints_path: "experiments/none_resnet34_2024-12-06_15-16-24"
 
 hydra:
   sweeper:
