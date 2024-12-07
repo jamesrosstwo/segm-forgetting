@@ -25,8 +25,12 @@ def save_plotly_figure(fig, out_path: Path, title: str):
 
 
 def histogram_image(counts: torch.Tensor, title: str, out_path: Path):
-    data = pd.DataFrame({"Labels": list(range(len(counts))), "Counts": counts.tolist()})
-    fig = px.bar(data, x="Labels", y="Counts", title=title)
+    data = pd.DataFrame({
+        "Labels": list(range(len(counts))),
+        "Counts": counts.tolist(),
+        "Colors": list(range(len(counts)))
+    })
+    fig = px.bar(data, x="Labels", y="Counts", color="Colors", title=title)
     fig.update_yaxes(type="log", title="Counts (Log Scale)")
     return save_plotly_figure(fig, out_path, title)
 
