@@ -118,8 +118,6 @@ class Experiment:
             torch.save(self._segm_model.state_dict(), save_path)
 
         # Evaluate the model on the validation set
-        self.evaluate(checkpoint_paths)
-
-        eval = ExperimentEvaluator(**cfg)
+        eval = ExperimentEvaluator(self._data_conf, self._model_conf, str(self._out_path))
         eval.evaluate_tasks()
         eval.analyze()
