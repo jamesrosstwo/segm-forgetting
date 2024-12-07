@@ -14,8 +14,11 @@ from tqdm import tqdm
 
 from file import ROOT_PATH
 from util import construct_dataset, construct_scenario, task_id_to_checkpoint_path, construct_model, construct_loader, \
-    N_CLASSES
+    N_CLASSES, N_TASKS
 
+
+def metrics_file_from_idx(idx):
+    return f"metrics_model_{idx}.csv"
 
 class SegmentationEvaluator:
     def __init__(self, model: nn.Module):
@@ -47,7 +50,7 @@ class SegmentationEvaluator:
 
             label = label.long()
             label_onehot = torch.nn.functional.one_hot(label, num_classes=N_CLASSES).permute(0, 3, 1, 2)
-            unique_values = torch.unique(preds_max)
+            # unique_values = torch.unique(preds_max)
             # print(f"Unique values in preds_max: {unique_values}")
             # print(f"Unique values in label: {torch.unique(label)}")
             acc += (preds_max == label).float().mean()
@@ -99,59 +102,26 @@ class ExperimentEvaluator:
         self._checkpoints_path = ROOT_PATH / checkpoints_path
         self._dataset = construct_dataset(dataset, train=use_training_set)
         self._model_cfg = model
-        self._n_tasks = 5
         self._eval_path = self._checkpoints_path / "eval"
         self._eval_path.mkdir()
 
     @property
     def checkpoint_paths(self) -> List[Path]:
-        return [task_id_to_checkpoint_path(self._checkpoints_path, i) for i in range(self._n_tasks)]
-
-    def _metrics_path_from_idx(self, idx):
-        return self._eval_path / f"metrics_model_{idx}.csv"
+        return [task_id_to_checkpoint_path(self._checkpoints_path, i) for i in range(N_TASKS)]
 
     def evaluate_tasks(self):
-        for checkpoint_path, model_idx in zip(self.checkpoint_paths, range(self._n_tasks)):
+        for checkpoint_path, model_idx in zip(self.checkpoint_paths, range(N_TASKS)):
             segm_model = construct_model(self._model_cfg)
             segm_model.load_state_dict(torch.load(checkpoint_path))
             scenario, task_classes = construct_scenario(self._dataset)
             evaluator = SegmentationEvaluator(segm_model)
-            metrics_out_path = self._metrics_path_from_idx(model_idx)
+            metrics_out_path = self._eval_path / metrics_file_from_idx(model_idx)
 
             all_metrics = []
             for eval_task_idx, metrics_df in enumerate(evaluator.evaluate_scenario(scenario)):
                 all_metrics.append(metrics_df)
             combined_metrics = pd.concat(all_metrics, ignore_index=True)
             combined_metrics.to_csv(metrics_out_path, index=False)
-
-    def cl_metrics(self, metrics_df):
-        task_ids = metrics_df['task_id'].unique()
-
-        num_tasks = len(task_ids)
-        accuracies = np.zeros((num_tasks, num_tasks))
-
-        for i, task_id in enumerate(task_ids):
-            accuracies[i, :i + 1] = metrics_df[metrics_df['task_id'] == task_id]['accuracy'].values[:i + 1]
-
-        forgetting = []
-        for t in range(num_tasks - 1):
-            best_acc = np.max(accuracies[:num_tasks, t])
-            last_acc = accuracies[-1, t]
-            forgetting.append(best_acc - last_acc)
-
-        bwt_values = []
-        for t in range(1, num_tasks):
-            bwt_values.append(np.mean(accuracies[t - 1, :t] - accuracies[t, :t]))
-
-        forgetting = np.mean(forgetting)
-        bwt = np.mean(bwt_values)
-        return forgetting, bwt
-
-    def analyze(self):
-        for model_idx in range(self._n_tasks):
-            df = pd.read_csv(self._metrics_path_from_idx(model_idx))
-            forgetting, bwt = self.cl_metrics(df)
-
 
 @hydra.main(version_base=None, config_path="../config", config_name="evaluate")
 def main(cfg: DictConfig) -> None:

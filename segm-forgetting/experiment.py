@@ -31,6 +31,7 @@ class Experiment:
             model: DictConfig,
             trainer: DictConfig,
             should_cache_results: bool = True,
+            batch_size: int = 8,
             debug: bool = False
     ):
         self._experiment_name = experiment_name
@@ -41,6 +42,8 @@ class Experiment:
         self._should_cache_results = should_cache_results
         self._out_path, self._out_cache_dir = self._make_output_dirs()
         self._debug_mode = debug
+
+        self._batch_size = batch_size
 
         self._init_wandb()
         self._dataset = construct_dataset(self._data_conf, train=True)
@@ -108,7 +111,7 @@ class Experiment:
         for task_id, taskset in enumerate(scenario):
             task_classes = tasks_classes[task_id]
             # Load data for this task
-            loader = construct_loader(taskset, batch_size=2, shuffle=False)
+            loader = construct_loader(taskset, batch_size=self._batch_size, shuffle=False)
             
             # Train the model on this task
             self._trainer.train_model_on_task(loader, task_classes)

@@ -2,7 +2,7 @@ defaults:
   - dataset: pascal_voc
   - model: unet
 
-checkpoints_path: "experiments/latest"
+checkpoints_path: "experiments/resnet18_best"
 
 hydra:
   sweeper:

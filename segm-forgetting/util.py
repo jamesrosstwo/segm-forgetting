@@ -10,7 +10,8 @@ from torch.utils.data import default_collate, DataLoader
 from file import DATA_PATH
 
 
-N_CLASSES = 21
+N_CLASSES = 21 # includes bg
+N_TASKS = 6
 
 def collate_mask_unknown(batch):
     processed_batch = []
@@ -56,13 +57,13 @@ def construct_scenario(dataset):
             Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
         ]
     )
-    task_classes = [[0] + scenario.class_order[:15 + i] for i in range(6)]
+    task_classes = [[0] + scenario.class_order[:15 + i] for i in range(N_TASKS)]
     return scenario, task_classes
 
 
 def construct_loader(dataset, *args, **kwargs):
     default_kwargs = dict(
-        collate_fn=collate_mask_unknown
+        collate_fn=collate_mask_unknown,
     )
     default_kwargs.update(kwargs)
     return DataLoader(dataset, *args, **default_kwargs)

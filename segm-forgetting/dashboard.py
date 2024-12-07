@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import List
 
 import gradio as gr
 import hydra
@@ -8,8 +9,10 @@ from omegaconf import DictConfig
 from tqdm import tqdm
 import plotly.express as px
 
+from analyzer import CLAnalyzer
+from evaluator import metrics_file_from_idx
 from file import ROOT_PATH
-from util import construct_dataset, construct_scenario, construct_model, construct_loader, N_CLASSES
+from util import construct_dataset, construct_scenario, construct_model, construct_loader, N_CLASSES, N_TASKS
 
 CACHE_PATH = ROOT_PATH / "experiments/dashboard"
 
@@ -17,10 +20,8 @@ CACHE_PATH = ROOT_PATH / "experiments/dashboard"
 def save_plotly_figure(fig, out_path: Path, title: str):
     image_path = out_path / f"{title}.png"
     html_path = out_path / f"{title}.html"
-
     fig.write_image(str(image_path))
     fig.write_html(str(html_path))
-
     return image_path, html_path
 
 
@@ -60,7 +61,8 @@ def get_class_dists(scenario, out_path):
 
 def run_dashboard(
         dataset: DictConfig,
-        model: DictConfig
+        model: DictConfig,
+        evaluated_experiments: List[str],
 ):
     # Construct datasets and scenarios
     train_dataset = construct_dataset(dataset, train=True)
@@ -107,9 +109,17 @@ def run_dashboard(
             # Further model-related components can be added here
             pass
 
-        with gr.Tab("Analysis"):
-            # Further analysis components can be added here
-            pass
+        with gr.Tab("Experiments"):
+            for experiment in evaluated_experiments:
+                exp_path = ROOT_PATH / experiment
+                eval_path = exp_path / "eval"
+                assert exp_path.exists()
+                assert eval_path.exists()
+
+                for idx in range(N_TASKS):
+                    task_metrics_path = eval_path / metrics_file_from_idx(idx)
+                    model_analysis = CLAnalyzer(task_metrics_path).full_analysis()
+                    # file_input = gr.File(label="Upload Metrics File", file_types=[".csv"])
 
     demo.launch()
 

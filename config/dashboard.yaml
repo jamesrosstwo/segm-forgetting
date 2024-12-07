@@ -2,6 +2,9 @@ defaults:
   - dataset: pascal_voc
   - model: unet
 
+evaluated_experiments:
+  - "experiments/resnet18_best"
+
 hydra:
   sweeper:
     params:
