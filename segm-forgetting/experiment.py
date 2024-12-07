@@ -19,7 +19,7 @@ import pandas as pd
 import os
 
 from util import get_date_string, construct_dataset, construct_model, construct_evaluator, construct_trainer, \
-    construct_scenario, task_id_to_checkpoint_path
+    construct_scenario, task_id_to_checkpoint_path, construct_loader
 
 
 class Experiment:
@@ -108,7 +108,7 @@ class Experiment:
         for task_id, taskset in enumerate(scenario):
             task_classes = tasks_classes[task_id]
             # Load data for this task
-            loader = DataLoader(taskset, batch_size=2, shuffle=False)
+            loader = construct_loader(taskset, batch_size=2, shuffle=False)
             
             # Train the model on this task
             self._trainer.train_model_on_task(loader, task_classes)
@@ -118,6 +118,6 @@ class Experiment:
             torch.save(self._segm_model.state_dict(), save_path)
 
         # Evaluate the model on the validation set
-        eval = ExperimentEvaluator(self._data_conf, self._model_conf, str(self._out_path))
+        eval = ExperimentEvaluator(self._data_conf, self._model_conf, str(self._out_path), use_training_set=True)
         eval.evaluate_tasks()
         eval.analyze()

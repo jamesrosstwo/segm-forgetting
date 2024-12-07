@@ -13,7 +13,8 @@ from torchmetrics.segmentation import MeanIoU, GeneralizedDiceScore
 from tqdm import tqdm
 
 from file import ROOT_PATH
-from util import construct_dataset, construct_scenario, task_id_to_checkpoint_path, construct_model
+from util import construct_dataset, construct_scenario, task_id_to_checkpoint_path, construct_model, construct_loader, \
+    N_CLASSES
 
 
 class SegmentationEvaluator:
@@ -30,10 +31,10 @@ class SegmentationEvaluator:
         progress = tqdm(loader, desc="Evaluating", leave=True)
 
         num_batches = 0
-        miou_class = MeanIoU(num_classes=21, per_class=True, input_format="one-hot").to(self.device)
-        miou_mean = MeanIoU(num_classes=21, per_class=False, input_format="one-hot").to(self.device)
-        dice_class = GeneralizedDiceScore(num_classes=21, per_class=True, input_format="one-hot").to(self.device)
-        dice_mean = GeneralizedDiceScore(num_classes=21, per_class=False, input_format="one-hot").to(self.device)
+        miou_class = MeanIoU(num_classes=N_CLASSES, per_class=True, input_format="one-hot").to(self.device)
+        miou_mean = MeanIoU(num_classes=N_CLASSES, per_class=False, input_format="one-hot").to(self.device)
+        dice_class = GeneralizedDiceScore(num_classes=N_CLASSES, per_class=True, input_format="one-hot").to(self.device)
+        dice_mean = GeneralizedDiceScore(num_classes=N_CLASSES, per_class=False, input_format="one-hot").to(self.device)
         acc = 0
 
         for data, label, task_idx in progress:
@@ -42,11 +43,10 @@ class SegmentationEvaluator:
             label = label.to(self.device)
             predicted_mask = self._model(data)
             preds_max = torch.argmax(predicted_mask, dim=1)
-            preds_onehot = torch.nn.functional.one_hot(preds_max, num_classes=21).permute(0, 3, 1, 2)
+            preds_onehot = torch.nn.functional.one_hot(preds_max, num_classes=N_CLASSES).permute(0, 3, 1, 2)
 
             label = label.long()
-            label[label == 255] = 0
-            label_onehot = torch.nn.functional.one_hot(label, num_classes=21).permute(0, 3, 1, 2)
+            label_onehot = torch.nn.functional.one_hot(label, num_classes=N_CLASSES).permute(0, 3, 1, 2)
             unique_values = torch.unique(preds_max)
             # print(f"Unique values in preds_max: {unique_values}")
             # print(f"Unique values in label: {torch.unique(label)}")
@@ -70,7 +70,7 @@ class SegmentationEvaluator:
         for eval_task_id, eval_taskset in enumerate(tqdm(scenario, desc="Evaluating across all tasks")):
             self._model.eval()
             acc, miou_mean, miou_class, dice_mean, dice_class = self._evaluate_single(
-                DataLoader(eval_taskset, batch_size=4, shuffle=False)
+                construct_loader(eval_taskset, batch_size=4, shuffle=False)
             )
 
             task_metrics = {
@@ -93,10 +93,11 @@ class ExperimentEvaluator:
             self,
             dataset: DictConfig,
             model: DictConfig,
-            checkpoints_path: str
+            checkpoints_path: str,
+            use_training_set: bool = False,
     ):
         self._checkpoints_path = ROOT_PATH / checkpoints_path
-        self._dataset = construct_dataset(dataset, train=False)
+        self._dataset = construct_dataset(dataset, train=use_training_set)
         self._model_cfg = model
         self._n_tasks = 5
         self._eval_path = self._checkpoints_path / "eval"
