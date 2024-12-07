@@ -5,8 +5,19 @@ from continuum import SegmentationClassIncremental
 from continuum.transforms.segmentation import Resize, ToTensor, Normalize
 from hydra.utils import instantiate
 from omegaconf import DictConfig
+from torch.utils.data import default_collate, DataLoader
 
 from file import DATA_PATH
+
+
+N_CLASSES = 21
+
+def collate_mask_unknown(batch):
+    processed_batch = []
+    for data, label, task_idx in batch:
+        label[label == 255] = 0
+        processed_batch.append((data, label, task_idx))
+    return default_collate(processed_batch)
 
 
 def get_date_string() -> str:
@@ -47,3 +58,11 @@ def construct_scenario(dataset):
     )
     task_classes = [[0] + scenario.class_order[:15 + i] for i in range(6)]
     return scenario, task_classes
+
+
+def construct_loader(dataset, *args, **kwargs):
+    default_kwargs = dict(
+        collate_fn=collate_mask_unknown
+    )
+    default_kwargs.update(kwargs)
+    return DataLoader(dataset, *args, **default_kwargs)
