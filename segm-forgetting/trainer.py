@@ -16,7 +16,7 @@ from util import N_CLASSES
 
 
 class SegmentationTrainer:
-    def __init__(self, model: nn.Module, loss: str, optimizer: DictConfig, n_base_epochs: int=4):
+    def __init__(self, model: nn.Module, loss: str, optimizer: DictConfig, n_base_epochs: int=10):
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self._model = model.to(self.device)
         self._loss_function = nn.CrossEntropyLoss(weight=torch.tensor([0.01 if x == 0 else 1.0 for x in range(21)]).to(self.device))
@@ -34,7 +34,7 @@ class SegmentationTrainer:
         self._model.train()
         miou_class = MeanIoU(num_classes=N_CLASSES, per_class=True, input_format="index").to(self.device)
         wandb.log({"test": 1})
-        for epoch in range(10):
+        for epoch in range(n_epochs):
             progress = tqdm.tqdm(loader, desc=f"Training epoch {epoch}/{n_epochs} on {self.device}", leave=True)
             total_loss = 0
             num_batches = 0
