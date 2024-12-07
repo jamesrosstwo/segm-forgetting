@@ -47,7 +47,7 @@ def construct_model(model_conf: DictConfig, **kwargs):
 def construct_scenario(dataset):
     scenario = SegmentationClassIncremental(
         dataset,
-        nb_classes=20,
+        nb_classes=21,
         initial_increment=15, increment=1,
         mode="sequential",
         transformations=[
@@ -56,7 +56,7 @@ def construct_scenario(dataset):
             Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
         ]
     )
-    task_classes = [[0] + scenario.class_order[:15 + i] for i in range(6)]
+    task_classes = [[0] + scenario.class_order[:15 + i] for i in range(7)]
     return scenario, task_classes
 
 

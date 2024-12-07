@@ -31,7 +31,9 @@ class Experiment:
             model: DictConfig,
             trainer: DictConfig,
             should_cache_results: bool = True,
-            debug: bool = False
+            debug: bool = False,
+            evaluator: DictConfig = None,
+            dataset_val: DictConfig = None
     ):
         self._experiment_name = experiment_name
         self._wandb_project_name = wandb_name
@@ -47,6 +49,8 @@ class Experiment:
         self._segm_model = construct_model(self._model_conf)
         self._trainer: SegmentationTrainer = construct_trainer(trainer, self._segm_model)
         self._freeze_encoder_weights()
+        self._evaluator = construct_evaluator(evaluator, self._segm_model)
+        self._dataset_val = construct_dataset(dataset_val, train=False)
 
     def _make_output_dirs(self):
         out_path = EXPERIMENTS_PATH / self._exp_instance_name
@@ -118,6 +122,50 @@ class Experiment:
             torch.save(self._segm_model.state_dict(), save_path)
 
         # Evaluate the model on the validation set
+<<<<<<< HEAD
         eval = ExperimentEvaluator(self._data_conf, self._model_conf, str(self._out_path), use_training_set=True)
         eval.evaluate_tasks()
         eval.analyze()
+=======
+        self.evaluate(saved_models)
+
+
+    def evaluate(self, saved_model_paths):
+        metrics = []
+        for model_path in saved_model_paths:
+            print(model_path)
+            self._segm_model.load_state_dict(torch.load(model_path))
+            train_task_id = int(str(model_path).split("_")[-1].split(".")[0])
+
+            scenario = SegmentationClassIncremental(
+                self._dataset_val,
+                nb_classes=20,
+                initial_increment=15, increment=1,
+                mode="sequential",
+                transformations=[Resize((512, 512)), ToTensor(), Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),]
+            )
+
+           
+            for eval_task_id, eval_taskset in enumerate(scenario):
+                # Don't need to do eval for tasks that we haven't trained on yet
+                if eval_task_id > train_task_id:
+                    continue
+                
+                self._segm_model.eval()
+                acc, miou_mean, miou_class, dice_mean, dice_class = self._evaluator._evaluate_single(DataLoader(eval_taskset, batch_size=2, shuffle=False))
+
+                metrics.append({
+                    "train_task_id": train_task_id,
+                    "eval_task_id": eval_task_id,
+                    "accuracy": [acc],
+                    "miou_mean": [miou_mean],
+                    "miou_class": [miou_class],
+                    "dice_mean": [dice_mean],
+                    "dice_class": [dice_class]
+                })
+                print(metrics)
+                print(eval_task_id)
+                df = pd.DataFrame(metrics)
+                df.to_csv(f"{self._out_path}/metrics.csv", index=False)
+            
+>>>>>>> 63536f8 (Added gradcam)

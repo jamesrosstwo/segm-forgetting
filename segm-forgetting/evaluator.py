@@ -11,6 +11,10 @@ import tqdm
 import torch
 from torchmetrics.segmentation import MeanIoU, GeneralizedDiceScore
 from tqdm import tqdm
+from continuum import SegmentationClassIncremental
+from continuum.transforms.segmentation import Resize, ToTensor, Normalize
+from torchcam.methods import SmoothGradCAMpp
+import matplotlib.pyplot as plt
 
 from file import ROOT_PATH
 from util import construct_dataset, construct_scenario, task_id_to_checkpoint_path, construct_model, construct_loader, \
@@ -96,12 +100,13 @@ class ExperimentEvaluator:
             checkpoints_path: str,
             use_training_set: bool = False,
     ):
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self._checkpoints_path = ROOT_PATH / checkpoints_path
         self._dataset = construct_dataset(dataset, train=use_training_set)
         self._model_cfg = model
         self._n_tasks = 5
         self._eval_path = self._checkpoints_path / "eval"
-        self._eval_path.mkdir()
+        self._eval_path.mkdir(exist_ok=True)
 
     @property
     def checkpoint_paths(self) -> List[Path]:
@@ -152,12 +157,69 @@ class ExperimentEvaluator:
             df = pd.read_csv(self._metrics_path_from_idx(model_idx))
             forgetting, bwt = self.cl_metrics(df)
 
+    def run_gradcam(self):
+        segm_model = construct_model(self._model_cfg).to(self.device)
+        segm_model.load_state_dict(torch.load('../experiments/none_resnet18_2024-12-05_18-10-10/model_task_0.pth'))
+        segm_model.train()
+        for layer in segm_model.encoder.children():
+            for param in layer.parameters():
+                param.requires_grad = True
+        
+
+        
+        scenario = SegmentationClassIncremental(
+            self._dataset,
+            nb_classes=20,
+            initial_increment=15, increment=1,
+            mode="overlap",
+            transformations=[Resize((512, 512)), ToTensor(), Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),]
+        )
+        for eval_task_id, eval_taskset in enumerate(scenario):
+            data_loader = DataLoader(eval_taskset, batch_size=1, shuffle=False)
+            for data, label, task_idx in data_loader:
+                data = data.to(self.device)
+                label = label.to(self.device)
+                if 15 in label:
+                    plt.imshow(label[0].squeeze(0).detach().cpu().numpy())
+                    plt.show()
+                else:
+                    continue
+                #target_layer = segm_model.encoder.layer1[-1]
+                target_layer = segm_model.decoder.blocks[-1].conv2[0]
+                cam_extractor = SmoothGradCAMpp(segm_model, target_layer=target_layer)
+                # with SmoothGradCAMpp(segm_model) as cam_extractor:
+                # Preprocess your data and feed it to the model
+                out = segm_model(data)
+                # Retrieve the CAM by passing the class index and the model output
+                activation_map = cam_extractor(15, out)
+                plt.imshow(activation_map[0].squeeze(0).detach().cpu().numpy())
+                plt.axis('off')
+                plt.tight_layout()
+                plt.show()
+
+                # predicted_mask = segm_model(data)
+                # print(predicted_mask.shape)
+        # for data, label, task_idx in data_loader:
+        #     data = data.to(self.device)
+        #     label = label.to(self.device)
+        #     predicted_mask = segm_model(data)
+        #     print(predicted_mask.shape)
+        print("good")
 
 @hydra.main(version_base=None, config_path="../config", config_name="evaluate")
 def main(cfg: DictConfig) -> None:
+    cfg = dict(cfg)
+    cfg.pop('evaluator', None)
+    cfg.pop('trainer', None)
+    cfg.pop('dataset_val', None)
+    cfg.pop('wandb_name', None)
+    cfg.pop('experiment_name', None)
+    cfg.pop('debug', None)
+    cfg['checkpoints_path'] = ''
     eval = ExperimentEvaluator(**cfg)
-    eval.evaluate_tasks()
-    eval.analyze()
+    eval.run_gradcam()
+    # eval.evaluate_tasks()
+    # eval.analyze()
 
 
 if __name__ == "__main__":

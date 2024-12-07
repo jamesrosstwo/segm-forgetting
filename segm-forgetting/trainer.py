@@ -19,7 +19,7 @@ class SegmentationTrainer:
     def __init__(self, model: nn.Module, loss: str, optimizer: DictConfig, n_base_epochs: int=10):
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self._model = model.to(self.device)
-        self._loss_function = nn.CrossEntropyLoss(weight=torch.tensor([0.01 if x == 0 else 1.0 for x in range(21)]).to(self.device))
+        self._loss_function = nn.CrossEntropyLoss(ignore_index=255, weight=torch.tensor([0.3 if x == 0 else 10.0 for x in range(21)]).to(self.device))
         self._optimizer = instantiate(optimizer, params=model.parameters())
         self._seen_classes = set()
         self._n_base_classes = None
@@ -50,6 +50,7 @@ class SegmentationTrainer:
                 predicted_mask = self._model(data)
                 preds_max = torch.argmax(predicted_mask, dim=1)
                 masked_logits = predicted_mask + class_mask.view(1, -1, 1, 1)
+                preds_max = torch.argmax(predicted_mask, dim=1)
                 # Crossentropy expects long labels
                 label = label.long()
                 loss = self._loss_function(masked_logits, label)
@@ -60,9 +61,9 @@ class SegmentationTrainer:
                 # Print average loss metric
                 total_loss += loss.item()
             
-                progress.set_postfix(avg_loss=loss.item()/num_batches)
+                progress.set_postfix(avg_loss=loss.item()/max(num_batches, 1))
 
                 # Log the average loss to wandb
-            wandb.log({"avg_loss": total_loss / num_batches})
+            wandb.log({"avg_loss": total_loss / max(num_batches, 1)})
             for i in range(N_CLASSES):
                 wandb.log({f"miou_class_{i}": miou_class.compute()[i]})
