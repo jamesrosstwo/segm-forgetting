@@ -29,10 +29,10 @@ class SegmentationEvaluator:
         progress = tqdm.tqdm(loader, desc="Evaluating", leave=True)
 
         num_batches = 0
-        miou_class = MeanIoU(num_classes=256, per_class=True, input_format="one-hot").to(self.device)
-        miou_mean = MeanIoU(num_classes=256, per_class=False, input_format="one-hot").to(self.device)
-        dice_class = GeneralizedDiceScore(num_classes=256, per_class=True, input_format="one-hot").to(self.device)
-        dice_mean = GeneralizedDiceScore(num_classes=256, per_class=False, input_format="one-hot").to(self.device)
+        miou_class = MeanIoU(num_classes=21, per_class=True, input_format="one-hot").to(self.device)
+        miou_mean = MeanIoU(num_classes=21, per_class=False, input_format="one-hot").to(self.device)
+        dice_class = GeneralizedDiceScore(num_classes=21, per_class=True, input_format="one-hot").to(self.device)
+        dice_mean = GeneralizedDiceScore(num_classes=21, per_class=False, input_format="one-hot").to(self.device)
         acc = 0
         for data, label, task_idx in progress:
             num_batches += 1
@@ -40,11 +40,12 @@ class SegmentationEvaluator:
             label = label.to(self.device)
             predicted_mask = self._model(data)
             preds_max = torch.argmax(predicted_mask, dim=1)
-            preds_onehot = torch.nn.functional.one_hot(preds_max, num_classes=256).permute(0, 3, 1, 2)
+            preds_onehot = torch.nn.functional.one_hot(preds_max, num_classes=21).permute(0, 3, 1, 2)
 
             # Crossentropy expects long labels
             label = label.long()
-            label_onehot = torch.nn.functional.one_hot(label, num_classes=256).permute(0, 3, 1, 2)
+            label[label == 255] = 0
+            label_onehot = torch.nn.functional.one_hot(label, num_classes=21).permute(0, 3, 1, 2)
             unique_values = torch.unique(preds_max)
             # print(f"Unique values in preds_max: {unique_values}")
             # print(f"Unique values in label: {torch.unique(label)}")
